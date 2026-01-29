@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "89554017780",
+    "project_id": "almacen-mgd",
+    "storage_bucket": "almacen-mgd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:89554017780:android:c5289da57f89a9002beda1",
+        "android_client_info": {
+          "package_name": "com.almacenmgd.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "89554017780-dsejb9g4uc2bbot1advdbq52cht6eu70.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCHs1Qp0BUkXILQGj-OolsuyQMjhtZkCRQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "89554017780-dsejb9g4uc2bbot1advdbq52cht6eu70.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
