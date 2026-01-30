@@ -3,10 +3,11 @@
 import React, { useEffect, useState } from "react";
 import { collection, query, getDocs, orderBy, doc, updateDoc, increment, deleteDoc } from "firebase/firestore";
 import { db } from "../config/firebase";
-import { FaBoxOpen, FaHammer, FaSearch, FaPlus, FaEdit, FaCartPlus } from "react-icons/fa";
+import { FaBoxOpen, FaHammer, FaSearch, FaPlus, FaEdit, FaCartPlus, FaHistory } from "react-icons/fa";
 import ProductionModal from "../Components/ProductionModal";
 import ProductoModal from "../Components/ProductoModal";
 import PurchaseModal from "../Components/PurchaseModal";
+import ProductionHistoryModal from "../Components/ProductionHistoryModal";
 import { ProductoData } from "../types/productTypes";
 
 export default function InventoryPage() {
@@ -23,6 +24,9 @@ export default function InventoryPage() {
 
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [selectedProductForPurchase, setSelectedProductForPurchase] = useState<ProductoData | null>(null);
+
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [selectedProductForHistory, setSelectedProductForHistory] = useState<ProductoData | null>(null);
 
   // Load Products
   const loadProducts = async () => {
@@ -65,6 +69,11 @@ export default function InventoryPage() {
   const openPurchaseModal = (product: ProductoData) => {
       setSelectedProductForPurchase(product);
       setIsPurchaseModalOpen(true);
+  };
+
+  const openHistoryModal = (product: ProductoData) => {
+      setSelectedProductForHistory(product);
+      setIsHistoryModalOpen(true);
   };
 
   const handleProductionConfirm = async (data: any) => {
@@ -281,9 +290,8 @@ export default function InventoryPage() {
                             </th>
                             <th className="p-4 font-serif font-bold text-primary text-base">Item</th>
                             <th className="p-4 font-serif font-bold text-primary text-base">Proveedor</th>
-                            <th className="p-4 font-serif font-bold text-primary text-base">U. Compra</th>
-                            <th className="p-4 font-serif font-bold text-primary text-base">U. Uso</th>
-                            <th className="p-4 font-serif font-bold text-primary text-base text-center">Stock</th>
+                            <th className="p-4 font-serif font-bold text-primary text-base text-center">Stock (U. Compra)</th>
+                            <th className="p-4 font-serif font-bold text-primary text-base text-center">Stock (U. Uso)</th>
                             <th className="p-4 font-serif font-bold text-primary text-base text-center">Acciones</th>
                         </tr>
                     </thead>
@@ -312,22 +320,34 @@ export default function InventoryPage() {
                                     <td className="p-4 text-muted-foreground">
                                         {product.supplier || <span className="text-muted-foreground/30 italic">--</span>}
                                     </td>
-                                    <td className="p-4">
+                                    {/* Stock (Purchase Unit) */}
+                                    <td className="p-4 text-center">
                                         {product.purchaseUnit ? (
-                                             <div className="flex flex-col">
-                                                 <span className="font-bold">{product.purchaseUnit}</span>
+                                             <div className="flex flex-col items-center">
+                                                 <span className="font-bold text-lg">
+                                                     {product.conversionFactor && product.conversionFactor > 1 
+                                                        ? Number((product.stock / product.conversionFactor).toFixed(2)).toString() 
+                                                        : "--"
+                                                     }
+                                                 </span>
+                                                 <span className="text-xs text-muted-foreground">{product.purchaseUnit}</span>
                                                  {product.conversionFactor && product.conversionFactor > 1 && (
-                                                     <span className="text-[10px] text-muted-foreground">x {product.conversionFactor} {product.unit}</span>
+                                                     <span className="text-[10px] text-muted-foreground/60">c/u x {product.conversionFactor} {product.unit || 'un'}</span>
                                                  )}
                                              </div>
                                         ) : <span className="text-muted-foreground/30 italic">--</span>}
                                     </td>
-                                    <td className="p-4 font-medium text-muted-foreground">
-                                        {product.unit || "un"}
+                                    
+                                    {/* Stock (Usage Unit) */}
+                                    <td className="p-4 text-center font-medium">
+                                        <div className="flex flex-col items-center">
+                                            <span className={`font-bold text-lg ${product.stock <= 5 ? "text-destructive" : "text-foreground"}`}>
+                                                {Number(product.stock.toFixed(3)).toString()}
+                                            </span>
+                                            <span className="text-xs text-muted-foreground">{product.unit || "un"}</span>
+                                        </div>
                                     </td>
-                                    <td className={`p-4 text-center font-bold text-base ${product.stock <= 5 ? "text-destructive" : "text-foreground"}`}>
-                                        {product.stock.toFixed(2)}
-                                    </td>
+
                                     <td className="p-4 text-center flex items-center justify-center gap-2">
                                          {/* Purchase Button (Only for Providers) */}
                                          {currentTab === 'PROVIDERS' && (
@@ -340,14 +360,24 @@ export default function InventoryPage() {
                                             </button>
                                          )}
 
-                                         {/* Edit Button */}
-                                         <button 
-                                            onClick={() => openEditModal(product)}
-                                            className="px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary hover:text-secondary-foreground font-medium text-xs transition-colors flex items-center gap-1"
-                                            title="Editar Ficha"
-                                        >
-                                            <FaEdit size={12} />
-                                        </button>
+                                         {/* Edit / History Button */}
+                                         {currentTab === 'PRODUCTION' ? (
+                                            <button 
+                                                onClick={() => openHistoryModal(product)}
+                                                className="px-3 py-1.5 rounded-lg bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500 hover:text-white font-medium text-xs transition-colors flex items-center gap-1 border border-yellow-500/20"
+                                                title="Ver Historial de Producción"
+                                            >
+                                                <FaHistory size={12} />
+                                            </button>
+                                         ) : (
+                                            <button 
+                                                onClick={() => openEditModal(product)}
+                                                className="px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary hover:text-secondary-foreground font-medium text-xs transition-colors flex items-center gap-1"
+                                                title="Editar Ficha"
+                                            >
+                                                <FaEdit size={12} />
+                                            </button>
+                                         )}
                                     </td>
                                 </tr>
                             ))
@@ -388,6 +418,13 @@ export default function InventoryPage() {
             onDelete={handleDeleteProduct}
         />
       )}
+
+      {/* History Modal */}
+      <ProductionHistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        product={selectedProductForHistory}
+      />
     </div>
   );
 }

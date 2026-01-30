@@ -5,6 +5,8 @@ import { db } from "../config/firebase";
 import { doc, updateDoc, addDoc, collection } from "firebase/firestore";
 import { ProductoProps } from "../types/productTypes";
 import { FaBox, FaCashRegister, FaBarcode, FaTags, FaLayerGroup, FaCube, FaWeightHanging, FaTrash, FaTimes, FaSave } from "react-icons/fa";
+import { SmartInput } from "./ui/SmartInput";
+import { NumberInput } from "./ui/NumberInput";
 
 interface Props {
   product?: ProductoProps | null; // If null/undefined -> Creation Mode
@@ -154,11 +156,10 @@ const ProductoModal: React.FC<Props> = ({ product, onClose, onSaved, onDelete, v
           <form id="product-form" onSubmit={handleSubmit} className="space-y-4">
             <div>
                 <label className="block text-[10px] font-bold text-foreground mb-1 uppercase tracking-wider">Nombre del Item</label>
-                <input
-                  type="text"
+                <SmartInput
                   name="title"
                   value={formData.title}
-                  onChange={handleChange}
+                  onValueChange={(val) => setFormData(prev => ({ ...prev, title: val }))}
                   placeholder={variant === 'PRODUCTION' ? "Ej. Milanesas de Carne" : "Ej. Harina 000"}
                   className="w-full px-3 py-2 rounded-lg bg-background border border-foreground/30 focus:border-primary text-foreground placeholder:text-muted-foreground/50 focus:outline-none transition-all shadow-sm text-sm"
                   required
@@ -171,32 +172,41 @@ const ProductoModal: React.FC<Props> = ({ product, onClose, onSaved, onDelete, v
                         <label className="block text-[10px] font-bold text-foreground mb-1 uppercase tracking-wider">
                              Costo / Precio Compra
                         </label>
-                        <input
-                          type="number"
-                          name="price"
-                          value={formData.price || ""}
-                          onChange={handleChange}
+                        <NumberInput
+                          value={formData.price || 0}
+                          onValueChange={(val) => setFormData(prev => ({ ...prev, price: val }))}
                           placeholder="0"
                           className="w-full px-3 py-2 rounded-lg bg-background border border-foreground/30 focus:border-primary text-foreground placeholder:text-muted-foreground/50 focus:outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none font-medium shadow-sm text-sm"
                         />
                     </div>
                     <div>
                         <label className="block text-[10px] font-bold text-foreground mb-1 uppercase tracking-wider">
-                             Stock Actual
+                             Stock Actual {formData.purchaseUnit ? `(en ${formData.purchaseUnit})` : ''}
                         </label>
-                        <input
-                          type="number"
-                          name="stock"
-                          value={formData.stock || ""}
-                          onChange={handleChange}
+                        <NumberInput
+                          value={
+                             (variant === 'INVENTORY' && formData.purchaseUnit && formData.conversionFactor && formData.conversionFactor > 1)
+                                ? (formData.stock || 0) / formData.conversionFactor
+                                : (formData.stock || 0)
+                          }
+                          onValueChange={(val) => {
+                             const factor = (variant === 'INVENTORY' && formData.purchaseUnit && formData.conversionFactor && formData.conversionFactor > 1) 
+                                ? formData.conversionFactor 
+                                : 1;
+                             setFormData(prev => ({ ...prev, stock: val * factor }))
+                          }}
                           placeholder="0"
                           className="w-full px-3 py-2 rounded-lg bg-background border border-foreground/30 focus:border-primary text-foreground placeholder:text-muted-foreground/50 focus:outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none font-medium shadow-sm text-sm"
                         />
+                        {(variant === 'INVENTORY' && formData.purchaseUnit && formData.conversionFactor && formData.conversionFactor > 1) && (
+                            <div className="text-[10px] text-end text-muted-foreground font-medium mt-1">
+                                = {Number((formData.stock || 0).toFixed(3))} {formData.unit || 'uds'} (Total)
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
 
-            {/* Configuration specific to Inventory (Suppliers) */}
             {variant === 'INVENTORY' && (
                 <div className="p-4 border border-border rounded-xl space-y-3 bg-muted/20">
                     <h3 className="text-xs font-bold text-foreground flex items-center gap-2 mb-2">
@@ -205,22 +215,18 @@ const ProductoModal: React.FC<Props> = ({ product, onClose, onSaved, onDelete, v
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-[9px] font-bold text-muted-foreground mb-1 uppercase tracking-wider">Unidad Compra (Bulto)</label>
-                            <input
-                              type="text"
-                              name="purchaseUnit"
+                            <SmartInput
                               value={formData.purchaseUnit}
-                              onChange={handleChange}
+                              onValueChange={(val) => setFormData(prev => ({ ...prev, purchaseUnit: val }))}
                               placeholder="Ej: Caja"
                               className="w-full px-3 py-1.5 rounded-lg bg-background border border-foreground/30 focus:border-primary text-foreground text-xs focus:outline-none transition-all shadow-sm"
                             />
                         </div>
                         <div>
                             <label className="block text-[9px] font-bold text-muted-foreground mb-1 uppercase tracking-wider">Contenido del Bulto</label>
-                            <input
-                              type="number"
-                              name="conversionFactor"
-                              value={formData.conversionFactor || ""}
-                              onChange={handleChange}
+                            <NumberInput
+                              value={formData.conversionFactor || 0}
+                              onValueChange={(val) => setFormData(prev => ({ ...prev, conversionFactor: val }))}
                               placeholder="Ej: 12"
                               className="w-full px-3 py-1.5 rounded-lg bg-background border border-foreground/30 focus:border-primary text-foreground text-xs focus:outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none shadow-sm"
                             />
@@ -232,22 +238,18 @@ const ProductoModal: React.FC<Props> = ({ product, onClose, onSaved, onDelete, v
                   <div className="grid grid-cols-2 gap-4">
                       <div>
                           <label className="block text-[9px] font-bold text-muted-foreground mb-1 uppercase tracking-wider">Unidad Base (Inventario)</label>
-                          <input
-                            type="text"
-                            name="unit"
+                          <SmartInput
                             value={formData.unit || ""}
-                            onChange={handleChange}
+                            onValueChange={(val) => setFormData(prev => ({ ...prev, unit: val }))}
                             placeholder="Ej: Litros, Kg, Unidades"
                             className="w-full px-3 py-1.5 rounded-lg bg-background border border-foreground/30 focus:border-primary text-foreground text-xs focus:outline-none transition-all shadow-sm"
                           />
                       </div>
                       <div>
                           <label className="block text-[9px] font-bold text-muted-foreground mb-1 uppercase tracking-wider">Proveedor</label>
-                          <input
-                            type="text"
-                            name="supplier"
+                          <SmartInput
                             value={formData.supplier || ""}
-                            onChange={handleChange}
+                            onValueChange={(val) => setFormData(prev => ({ ...prev, supplier: val }))}
                             placeholder="Ej: Distribuidora X"
                             className="w-full px-3 py-1.5 rounded-lg bg-background border border-foreground/30 focus:border-primary text-foreground text-xs focus:outline-none transition-all shadow-sm"
                           />

@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { db } from "../config/firebase";
-import { doc, updateDoc, addDoc, collection, getDocs, query, where } from "firebase/firestore";
+import { doc, updateDoc, addDoc, collection, getDocs } from "firebase/firestore";
 import { ProductoProps, RecetaItem } from "../types/productTypes";
 import { FaSave, FaArrowLeft, FaTrash, FaPlus, FaSearch, FaExclamationTriangle, FaMagic, FaWeightHanging, FaCube } from "react-icons/fa";
+import { SmartInput } from "./ui/SmartInput";
+import { NumberInput } from "./ui/NumberInput";
 
 interface Props {
   initialData?: ProductoProps | null;
@@ -80,7 +82,7 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
       if (!searchTerm) return;
       const newIngredient: RecetaItem = {
           ingredientId: "CUSTOM_" + Date.now(), // Unique ID for custom item
-          ingredientName: searchTerm,
+          ingredientName: searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1), // Auto-capitalize
           quantity: 1,
           unit: 'un'
       };
@@ -165,10 +167,9 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
             <div className="col-span-1 bg-card p-8 space-y-8">
                 <div>
                     <label className="block text-sm font-semibold text-muted-foreground mb-2 ml-1">Nombre del Producto Final</label>
-                    <input 
-                        type="text" 
+                    <SmartInput 
                         value={formData.title} 
-                        onChange={e => setFormData({...formData, title: e.target.value})}
+                        onValueChange={val => setFormData({...formData, title: val})}
                         className="w-full text-xl font-bold px-4 py-3 bg-muted/30 rounded-xl border-2 border-transparent focus:border-primary/50 focus:bg-background focus:outline-none transition-all placeholder:text-muted-foreground/30"
                         placeholder="Ej: Salsa Filetto"
                         autoFocus
@@ -231,39 +232,36 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
                             <div className="grid grid-cols-12 gap-2 items-center">
                                 <div className="col-span-12 md:col-span-5">
                                     <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Principal (Lote)</label>
-                                    <input 
-                                        type="text" 
+                                    <SmartInput 
                                         placeholder="Ej: Olla 20L" 
                                         value={formData.defaultContainer?.name || ""}
-                                        onChange={e => setFormData({
+                                        onValueChange={val => setFormData({
                                             ...formData, 
-                                            defaultContainer: {...formData.defaultContainer!, name: e.target.value}
+                                            defaultContainer: {...formData.defaultContainer!, name: val}
                                         })}
                                         className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20"
                                     />
                                 </div>
                                 <div className="col-span-6 md:col-span-3">
                                     <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Capacidad</label>
-                                    <input 
-                                        type="number" 
+                                    <NumberInput 
                                         placeholder="0"
-                                        value={formData.defaultContainer?.capacity || ""}
-                                        onChange={e => setFormData({
+                                        value={formData.defaultContainer?.capacity || 0}
+                                        onValueChange={val => setFormData({
                                             ...formData, 
-                                            defaultContainer: {...formData.defaultContainer!, capacity: Number(e.target.value)}
+                                            defaultContainer: {...formData.defaultContainer!, capacity: val}
                                         })}
                                         className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20 text-center"
                                     />
                                 </div>
                                 <div className="col-span-6 md:col-span-4">
                                     <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Unidad</label>
-                                    <input 
-                                        type="text" 
+                                    <SmartInput 
                                         placeholder="Lts"
                                         value={formData.defaultContainer?.unit || ""}
-                                        onChange={e => setFormData({
+                                        onValueChange={val => setFormData({
                                             ...formData, 
-                                            defaultContainer: {...formData.defaultContainer!, unit: e.target.value}
+                                            defaultContainer: {...formData.defaultContainer!, unit: val}
                                         })}
                                         className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20 text-center"
                                     />
@@ -275,13 +273,12 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
                                 <div key={idx} className="grid grid-cols-12 gap-2 items-center animate-in fade-in slide-in-from-top-1">
                                     <div className="col-span-12 md:col-span-5">
                                         <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Alternativa #{idx + 1}</label>
-                                        <input 
-                                            type="text" 
+                                        <SmartInput 
                                             placeholder="Ej: Frasco 500ml" 
                                             value={cont.name}
-                                            onChange={e => {
+                                            onValueChange={val => {
                                                 const updated = [...(formData.additionalContainers || [])];
-                                                updated[idx].name = e.target.value;
+                                                updated[idx].name = val;
                                                 setFormData({...formData, additionalContainers: updated});
                                             }}
                                             className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20 border-l-4 border-l-secondary/50"
@@ -289,13 +286,12 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
                                     </div>
                                     <div className="col-span-5 md:col-span-3">
                                         <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Rend./Lote</label>
-                                        <input 
-                                            type="number" 
+                                        <NumberInput 
                                             placeholder="0"
-                                            value={cont.capacity || ""}
-                                            onChange={e => {
+                                            value={cont.capacity || 0}
+                                            onValueChange={val => {
                                                 const updated = [...(formData.additionalContainers || [])];
-                                                updated[idx].capacity = Number(e.target.value);
+                                                updated[idx].capacity = val;
                                                 setFormData({...formData, additionalContainers: updated});
                                             }}
                                             title="Cuántas unidades de ESTE envase salen por cada 1 Lote de receta"
@@ -304,13 +300,12 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
                                     </div>
                                     <div className="col-span-5 md:col-span-3">
                                         <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Unidad</label>
-                                        <input 
-                                            type="text" 
+                                        <SmartInput 
                                             placeholder="un"
                                             value={cont.unit || ""}
-                                            onChange={e => {
+                                            onValueChange={val => {
                                                 const updated = [...(formData.additionalContainers || [])];
-                                                updated[idx].unit = e.target.value;
+                                                updated[idx].unit = val;
                                                 setFormData({...formData, additionalContainers: updated});
                                             }}
                                             className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20 text-center"
@@ -335,7 +330,7 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
             </div>
 
             {/* Right Col: Ingredients Manager */}
-            <div className="col-span-2 bg-card p-8 flex flex-col h-[700px] lg:h-auto">
+            <div className="col-span-2 bg-card p-4 lg:p-8 flex flex-col min-h-[500px] lg:min-h-0 lg:h-auto">
                 <div className="flex justify-between items-end mb-6 border-b border-border pb-6">
                     <div>
                         <h3 className="font-serif font-bold text-2xl text-foreground">Ingredientes / Receta</h3>
@@ -354,7 +349,7 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
                 </div>
 
                 {/* Ingredient List */}
-                <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar max-h-[60vh] lg:max-h-none">
                     {(!formData.recipe || formData.recipe.length === 0) ? (
                         <div className="flex flex-col items-center justify-center h-64 text-muted-foreground border-2 border-dashed border-border rounded-2xl bg-muted/5">
                             <FaMagic className="text-4xl opacity-20 mb-4" />
@@ -377,10 +372,9 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
 
                                 {/* Name */}
                                 <div className="flex-1">
-                                    <input 
-                                        type="text" 
+                                    <SmartInput 
                                         value={ing.ingredientName}
-                                        onChange={(e) => handleUpdateIngredient(idx, 'ingredientName', e.target.value)}
+                                        onValueChange={(val) => handleUpdateIngredient(idx, 'ingredientName', val)}
                                         className="w-full bg-transparent border-none focus:ring-0 font-bold text-foreground p-0 text-lg decoration-dotted hover:underline decoration-muted-foreground/30 underline-offset-4 placeholder:text-muted-foreground/50"
                                         placeholder="Nombre del insumo"
                                     />
@@ -393,10 +387,9 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
 
                                 {/* Quantity */}
                                 <div className="flex items-center gap-2">
-                                    <input 
-                                        type="number" 
-                                        value={ing.quantity || ""}
-                                        onChange={(e) => handleUpdateIngredient(idx, 'quantity', Number(e.target.value))}
+                                    <NumberInput 
+                                        value={ing.quantity || 0}
+                                        onValueChange={(val) => handleUpdateIngredient(idx, 'quantity', val)}
                                         placeholder="0"
                                         style={{ width: `${Math.max(3, (ing.quantity || 0).toString().length) + 4}ch` }}
                                         className="min-w-[80px] bg-muted/20 border-2 border-foreground/50 hover:border-foreground focus:border-primary focus:bg-background rounded-lg px-2 py-1.5 text-center font-mono font-bold outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -405,10 +398,9 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
 
                                 {/* Unit (Editable) */}
                                 <div className="w-24">
-                                     <input 
-                                        type="text" 
+                                     <SmartInput 
                                         value={ing.unit}
-                                        onChange={(e) => handleUpdateIngredient(idx, 'unit', e.target.value)}
+                                        onValueChange={(val) => handleUpdateIngredient(idx, 'unit', val)}
                                         className="w-full bg-muted/20 border border-transparent hover:border-border focus:border-primary/50 focus:bg-background rounded-lg px-3 py-1.5 text-center text-sm font-medium outline-none transition-all"
                                         placeholder="Unidad"
                                     />
@@ -434,12 +426,11 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
                     <div className="p-5 border-b border-border bg-muted/30">
                         <div className="relative">
                             <FaSearch className="absolute left-4 top-3.5 text-muted-foreground" />
-                            <input 
-                                type="text"
+                            <SmartInput 
                                 placeholder="Buscar insumo..."
                                 className="w-full pl-11 pr-4 py-3 rounded-xl bg-background border border-input focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-lg transition-all"
                                 value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
+                                onValueChange={setSearchTerm}
                                 autoFocus
                             />
                         </div>

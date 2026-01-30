@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { db } from "../config/firebase";
-import { doc, updateDoc, increment } from "firebase/firestore";
+import { doc, updateDoc, increment, addDoc, collection } from "firebase/firestore";
 import { ProductoProps, RecetaItem } from "../types/productTypes";
 import { FaCheckCircle, FaClipboardList, FaDumbbell, FaMagic, FaHistory, FaArrowRight, FaExclamationTriangle } from "react-icons/fa";
+import { NumberInput } from "./ui/NumberInput";
 
 interface Props {
   products: ProductoProps[];
@@ -71,13 +72,12 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
          }
 
          // 2. Suggest Ingredients (Standard)
-         if (mode === 'FAST') {
-             const scaledRecipe = (selectedProduct.recipe || []).map(item => ({
-                 ...item,
-                 quantity: parseFloat((item.quantity * inputQty).toFixed(2)) // Round to 2
-             }));
-             setSessionRecipe(scaledRecipe);
-         }
+         // Corrected: Now we apply this for both FAST and TRAINING so the user sees the "expected" amounts first.
+         const scaledRecipe = (selectedProduct.recipe || []).map(item => ({
+             ...item,
+             quantity: parseFloat((item.quantity * inputQty).toFixed(2)) // Round to 2
+         }));
+         setSessionRecipe(scaledRecipe);
      } else if (inputQty === 0) {
          setOutputQty(0);
      }
@@ -119,7 +119,15 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
             }
         }
 
-        // 3. Training Mode Logic
+        // 3. Training Mode Logic & History Logging (Unified)
+        let changeLog: string[] = [];
+        let updates: any = {};
+        
+        let yieldRatioForHistory = 0;
+        if (inputQty > 0) {
+            yieldRatioForHistory = outputQty / inputQty;
+        }
+
         if (mode === 'TRAINING' && inputQty > 0) {
              console.log("Training Mode: Updating Master Data...");
              
@@ -137,25 +145,33 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
                  const oldAvg = masterItem.quantity;
                  const newAvg = ((oldAvg * currentTimes) + usagePerBatchThisRun) / newTimes;
 
+                 // Trigger log if THIS SESSION deviated from the ESTABLISHED AVERAGE
+                 if (Math.abs(usagePerBatchThisRun - oldAvg) > 0.01) {
+                     changeLog.push(`${masterItem.ingredientName}: Usado ${usagePerBatchThisRun.toFixed(2)} (Base: ${oldAvg.toFixed(2)} -> ${newAvg.toFixed(2)})`);
+                 }
+
                  return {
                      ...masterItem,
                      quantity: parseFloat(newAvg.toFixed(2))
                  };
              });
 
-             const updates: any = {
+             updates = {
                  recipe: newMasterRecipe,
                  timesProduced: newTimes
              };
 
              // B. Update Capacity/Yield (Only for Batch)
-             // If we predicted 60 but got 65, we learn that 1 Batch ~= 65.
              if (selectedProduct.productionStrategy === 'VOLUME_BATCH') {
                  const currentCapacity = selectedProduct.defaultContainer?.capacity || 0;
-                 const yieldPerBatchThisRun = outputQty / inputQty;
                  
                  // Weighted Average for Capacity
-                 const newCapacity = ((currentCapacity * currentTimes) + yieldPerBatchThisRun) / newTimes;
+                 const newCapacity = ((currentCapacity * currentTimes) + yieldRatioForHistory) / newTimes;
+                 
+                 // Same trigger logic for Yield
+                 if (Math.abs(yieldRatioForHistory - currentCapacity) > 0.1) {
+                     changeLog.push(`Rendimiento: Dio ${yieldRatioForHistory.toFixed(1)} (Base: ${currentCapacity.toFixed(1)} -> ${newCapacity.toFixed(1)})`);
+                 }
                  
                  updates.defaultContainer = {
                      ...selectedProduct.defaultContainer,
@@ -164,7 +180,23 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
              }
 
              await updateDoc(productRef, updates);
-         }
+        }
+
+        // 4. Save History Log (For BOTH Modes)
+        try {
+             await addDoc(collection(db, `Productos/${productRef.id}/History`), {
+                 date: new Date().toISOString(),
+                 mode: mode, // 'FAST' or 'TRAINING'
+                 inputQty, // Lotes
+                 outputQty, // Unidades
+                 wasteQty,
+                 yieldRatio: parseFloat(yieldRatioForHistory.toFixed(2)),
+                 changes: changeLog, // Array of strings describing what changed
+                 notes: mode === 'TRAINING' ? "Ajuste de Receta" : "Producción Rápida"
+             });
+        } catch (err) {
+             console.error("Error saving history log", err);
+        }
 
          // Success Feedback without Alert (use toast ideally, but simple alert for now is robust enough)
          onProductionCompleted();
@@ -182,54 +214,54 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-2">
+    <div className="w-full max-w-5xl mx-auto space-y-6 lg:space-y-8 animate-in fade-in slide-in-from-bottom-2 pb-24 lg:pb-0">
         {/* Helper Header */}
-        <div className="text-center space-y-2 mb-8">
-            <h2 className="text-3xl font-serif font-bold text-primary">Registrar Producción</h2>
-            <p className="text-muted-foreground">Selecciona el modo de trabajo y carga tus resultados.</p>
+        <div className="text-center space-y-2 mb-6">
+            <h2 className="text-2xl lg:text-3xl font-serif font-bold text-primary">Registrar Producción</h2>
+            <p className="text-sm lg:text-base text-muted-foreground">Selecciona el modo de trabajo y carga tus resultados.</p>
         </div>
 
         {/* Mode Selector */}
-        <div className="grid grid-cols-2 gap-4 p-1.5 bg-muted/20 rounded-2xl max-w-lg mx-auto border border-border">
+        <div className="grid grid-cols-2 gap-3 lg:gap-4 p-1.5 bg-muted/20 rounded-2xl max-w-lg mx-auto border border-border">
             <button 
                 onClick={() => setMode('FAST')}
-                className={`flex flex-col items-center justify-center py-5 rounded-xl transition-all ${
+                className={`flex flex-col items-center justify-center py-4 lg:py-5 rounded-xl transition-all ${
                     mode === 'FAST' 
                         ? 'bg-card shadow-sm text-primary ring-1 ring-primary/20' 
                         : 'text-muted-foreground hover:bg-muted/50'
                 }`}
             >
-                <FaMagic className="text-2xl mb-2" />
-                <span className="font-bold text-sm">Modo Rápido</span>
-                <span className="text-xs opacity-70 mt-1">Receta Estándar</span>
+                <FaMagic className="text-xl lg:text-2xl mb-1 lg:mb-2" />
+                <span className="font-bold text-xs lg:text-sm">Modo Rápido</span>
+                <span className="text-[10px] lg:text-xs opacity-70 mt-0.5">Automático</span>
             </button>
             <button 
                 onClick={() => setMode('TRAINING')}
-                className={`flex flex-col items-center justify-center py-5 rounded-xl transition-all ${
+                className={`flex flex-col items-center justify-center py-4 lg:py-5 rounded-xl transition-all ${
                     mode === 'TRAINING' 
                         ? 'bg-card shadow-sm text-[#A0522D] ring-1 ring-[#A0522D]/20' 
                         : 'text-muted-foreground hover:bg-muted/50'
                 }`}
             >
-                <FaDumbbell className="text-2xl mb-2" />
-                <span className="font-bold text-sm">Modo Entrenamiento</span>
-                <span className="text-xs opacity-70 mt-1">Ajusta Promedios</span>
+                <FaDumbbell className="text-xl lg:text-2xl mb-1 lg:mb-2" />
+                <span className="font-bold text-xs lg:text-sm">Entrenamiento</span>
+                <span className="text-[10px] lg:text-xs opacity-70 mt-0.5">Ajustable</span>
             </button>
         </div>
 
         {/* Form Card */}
         <div className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
              {/* Product Selector */}
-             <div className="p-8 border-b border-border bg-muted/5 z-20 relative">
+             <div className="p-4 lg:p-8 border-b border-border bg-muted/5 z-20 relative">
                  <label className="block text-xs font-bold text-muted-foreground mb-3 text-center uppercase tracking-widest">¿Qué vas a producir hoy?</label>
                  
                  {/* Custom Dropdown */}
                  <div className="relative max-w-xl mx-auto">
                      <button
                         onClick={() => setDropdownOpen(!dropdownOpen)}
-                        className="w-full appearance-none p-4 pl-6 pr-12 text-xl font-bold bg-background border border-input rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none shadow-sm transition-all text-center hover:border-primary/50 flex items-center justify-between group"
+                        className="w-full appearance-none p-4 pl-6 pr-12 text-lg lg:text-xl font-bold bg-background border border-input rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none shadow-sm transition-all text-center hover:border-primary/50 flex items-center justify-between group"
                      >
-                        <span className={`block w-full text-center ${!selectedProductId ? 'text-muted-foreground' : 'text-foreground'}`}>
+                        <span className={`block w-full text-center truncate ${!selectedProductId ? 'text-muted-foreground' : 'text-foreground'}`}>
                             {selectedProductId 
                                 ? products.find(p => p.id === selectedProductId)?.title 
                                 : "-- Seleccionar Receta --"}
@@ -260,8 +292,8 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
                                             selectedProductId === p.id ? 'bg-primary/10 text-primary font-bold' : 'text-foreground'
                                         }`}
                                      >
-                                        <span className="font-bold">{p.title}</span>
-                                        {selectedProductId === p.id && <FaCheckCircle className="text-primary" />}
+                                        <span className="font-bold truncate">{p.title}</span>
+                                        {selectedProductId === p.id && <FaCheckCircle className="text-primary flex-shrink-0" />}
                                      </button>
                                  ))
                              )}
@@ -276,16 +308,16 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
              </div>
 
              {selectedProduct && (
-                 <div className="p-8 space-y-10">
+                 <div className="p-4 lg:p-8 space-y-8 lg:space-y-10">
                      {/* Container Selector (Fixed Segmented Control) */}
                      {(selectedProduct.additionalContainers && selectedProduct.additionalContainers.length > 0) && selectedProduct.productionStrategy === 'VOLUME_BATCH' && (
-                         <div className="flex justify-center -mb-6 relative z-10">
-                              <div className="bg-[#E7DCCA] p-1.5 rounded-2xl flex gap-1 shadow-inner border border-[#D7CCC8]">
+                         <div className="flex justify-center -mb-6 relative z-10 overflow-x-auto pb-2 hide-scrollbar">
+                              <div className="bg-[#E7DCCA] p-1.5 rounded-2xl flex gap-1 shadow-inner border border-[#D7CCC8] min-w-max">
                                   {[selectedProduct.defaultContainer, ...(selectedProduct.additionalContainers || [])].map((cont, idx) => (
                                       <button
                                           key={idx}
                                           onClick={() => setSelectedContainerIdx(idx)}
-                                          className={`relative px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 overflow-hidden group ${
+                                          className={`relative px-4 lg:px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 overflow-hidden group ${
                                               selectedContainerIdx === idx
                                                   ? 'bg-[#D7CCC8] text-[#5D4037] shadow-sm ring-1 ring-[#5D4037]/10'
                                                   : 'text-[#8D6E63] hover:bg-[#D7CCC8]/50'
@@ -294,7 +326,7 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
                                           <span className={`block text-[10px] uppercase mb-0.5 tracking-widest font-serif ${selectedContainerIdx === idx ? 'opacity-80' : 'opacity-60'}`}>
                                               {idx === 0 ? "Principal" : `Opción #${idx}`}
                                           </span>
-                                          <span className="text-base">
+                                          <span className="text-sm lg:text-base whitespace-nowrap">
                                             {cont?.name || `Contenedor ${idx + 1}`}
                                           </span>
                                           
@@ -309,23 +341,22 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
                      )}
 
                      {/* Quantity Inputs */}
-                     <div className="flex flex-col md:flex-row items-center justify-center gap-12 p-8">
+                     <div className="flex flex-col md:flex-row items-center justify-center gap-8 lg:gap-12 p-4 lg:p-8">
                          {/* Input A: Strategy Based (e.g. Batches) */}
-                         <div className="flex flex-col items-center space-y-3">
+                         <div className="flex flex-col items-center space-y-3 w-full md:w-auto">
                             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/20 px-3 py-1 rounded-full">
                                 {selectedProduct.productionStrategy === 'VOLUME_BATCH' 
                                     ? `Lotes Ingresados` 
                                     : "Unidades a Producir"
                                 }
                             </span>
-                            <div className="flex items-center gap-3">
-                                <input 
-                                    type="number"
-                                    value={inputQty || ""}
-                                    onChange={(e) => setInputQty(Number(e.target.value))}
+                            <div className="flex items-center gap-3 bg-muted/5 p-4 rounded-2xl border border-transparent focus-within:border-primary/20 focus-within:bg-muted/10 transition-all w-full md:w-auto justify-center">
+                                <NumberInput 
+                                    value={inputQty || 0}
+                                    onValueChange={setInputQty}
                                     placeholder="0"
-                                    style={{ width: `${Math.max(1, (inputQty || 0).toString().length) + 1}ch` }}
-                                    className="min-w-[80px] text-center text-5xl font-black bg-transparent border-none outline-none py-1 text-foreground transition-all placeholder:text-muted-foreground/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none hover:bg-muted/10 rounded-lg cursor-pointer focus:bg-muted/10 focus:ring-1 focus:ring-primary/20"
+                                    style={{ width: `${Math.max(1, (inputQty || 0).toString().length) + 3}ch` }}
+                                    className="min-w-[80px] text-center text-5xl lg:text-6xl font-black bg-transparent border-none outline-none py-1 text-foreground transition-all placeholder:text-muted-foreground/10 hover:cursor-text"
                                     autoFocus
                                 />
                                 <span className="text-sm font-bold text-muted-foreground whitespace-nowrap opacity-60">
@@ -341,32 +372,31 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
 
                          {/* Arrow */}
                          {selectedProduct.productionStrategy === 'VOLUME_BATCH' && (
-                             <div className="text-muted-foreground/10 hidden md:block">
-                                 <FaArrowRight size={20} />
+                             <div className="text-muted-foreground/10 hidden md:block rotate-90 md:rotate-0">
+                                 <FaArrowRight size={24} />
                              </div>
                          )}
 
                          {/* Input B: Final Yield */}
                          {selectedProduct.productionStrategy === 'VOLUME_BATCH' && (
-                             <div className="flex flex-col items-center space-y-3 animate-in fade-in slide-in-from-left-4">
-                                <div className="flex gap-12">
+                             <div className="flex flex-col items-center space-y-4 animate-in fade-in slide-in-from-left-4 w-full md:w-auto">
+                                <div className="flex gap-4 lg:gap-12 w-full justify-center">
                                     {/* Real Yield (Good Units) */}
                                     <div className="flex flex-col items-center gap-2">
                                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2 bg-muted/20 px-3 py-1 rounded-full">
-                                            Rendimiento Real
+                                            Rendimiento
                                             {mode === 'TRAINING' && <FaDumbbell className="text-[#A0522D] w-3 h-3" />}
                                         </span>
-                                        <div className="flex items-center gap-3">
-                                            <input 
-                                                type="number"
-                                                value={outputQty || ""}
-                                                onChange={(e) => setOutputQty(Number(e.target.value))}
-                                                placeholder="0"
-                                                style={{ width: `${Math.max(1, (outputQty || 0).toString().length) + 1}ch` }}
-                                                className={`min-w-[60px] text-center text-5xl font-black border-none outline-none py-1 transition-all bg-transparent placeholder:text-muted-foreground/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none hover:bg-muted/10 rounded-lg cursor-pointer focus:bg-muted/10 focus:ring-1 ${
+                                        <div className={`flex items-center gap-3 p-2 rounded-xl border border-transparent transition-all ${mode === 'TRAINING' ? 'focus-within:bg-[#A0522D]/5 focus-within:border-[#A0522D]/20' : 'opacity-80'}`}>
+                                            <NumberInput 
+                                                value={outputQty || 0}
+                                                onValueChange={(val) => mode === 'TRAINING' && setOutputQty(val)}
+                                                readOnly={mode === 'FAST'}
+                                                style={{ width: `${Math.max(1, (outputQty || 0).toString().length) + 3}ch` }}
+                                                className={`min-w-[60px] text-center text-4xl lg:text-5xl font-black border-none outline-none py-1 transition-all bg-transparent placeholder:text-muted-foreground/10 ${
                                                     mode === 'TRAINING' 
-                                                        ? 'text-[#A0522D] focus:ring-[#A0522D]/30' 
-                                                        : 'text-foreground focus:ring-primary/20'
+                                                        ? 'text-[#A0522D] cursor-text' 
+                                                        : 'text-foreground cursor-default'
                                                 }`}
                                             />
                                             <span className="text-sm font-bold text-muted-foreground whitespace-nowrap opacity-60">
@@ -376,18 +406,19 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
                                     </div>
 
                                     {/* Waste (Merma) */}
-                                    <div className="flex flex-col items-center gap-2 opacity-80 hover:opacity-100 transition-opacity">
+                                    <div className={`flex flex-col items-center gap-2 transition-opacity ${mode === 'FAST' ? 'opacity-60 grayscale' : 'opacity-100'}`}>
                                         <span className="text-[10px] font-bold text-destructive/70 uppercase tracking-widest flex items-center gap-2 bg-destructive/10 px-3 py-1 rounded-full">
                                             Merma
                                         </span>
-                                        <div className="flex items-center gap-3">
-                                            <input 
-                                                type="number"
-                                                value={wasteQty || ""}
-                                                onChange={(e) => setWasteQty(Number(e.target.value))}
-                                                placeholder="0"
-                                                style={{ width: `${Math.max(1, (wasteQty || 0).toString().length) + 1}ch` }}
-                                                className="min-w-[50px] text-center text-4xl font-black border-none focus:ring-1 focus:ring-destructive/20 text-destructive outline-none py-1 transition-all bg-transparent placeholder:text-destructive/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none hover:bg-destructive/5 rounded-lg cursor-pointer"
+                                        <div className={`flex items-center gap-3 p-2 rounded-xl border border-transparent transition-all ${mode === 'TRAINING' ? 'focus-within:bg-destructive/5 focus-within:border-destructive/20' : ''}`}>
+                                            <NumberInput 
+                                                value={wasteQty || 0}
+                                                onValueChange={(val) => mode === 'TRAINING' && setWasteQty(val)}
+                                                readOnly={mode === 'FAST'}
+                                                style={{ width: `${Math.max(1, (wasteQty || 0).toString().length) + 3}ch` }}
+                                                className={`min-w-[50px] text-center text-3xl lg:text-4xl font-black border-none outline-none py-1 transition-all bg-transparent placeholder:text-destructive/10 ${
+                                                    mode === 'TRAINING' ? 'text-destructive cursor-text' : 'text-destructive/50 cursor-default'
+                                                }`}
                                             />
                                             <span className="text-sm font-bold text-destructive/50 whitespace-nowrap">
                                                 {activeContainer?.unit || 'un'}
@@ -403,16 +434,16 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
                      {inputQty > 0 && (
                          <div className="animate-in fade-in slide-in-from-bottom-4">
                              <div className="flex justify-between items-center mb-4 px-2">
-                                <h3 className="font-bold text-lg flex items-center gap-2 text-foreground/80">
+                                <h3 className="font-bold text-base lg:text-lg flex items-center gap-2 text-foreground/80">
                                     {mode === 'FAST' ? <FaCheckCircle className="text-primary"/> : <FaDumbbell className="text-[#A0522D]"/>}
                                     {mode === 'FAST' ? 'Consumo de Insumos (Calculado)' : 'Consumo Real (Para Entrenar)'}
                                 </h3>
-                                {mode === 'FAST' && <span className="text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">Puedes ajustar si hubo desperdicios</span>}
+                                {mode === 'FAST' && <span className="text-[10px] lg:text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full hidden sm:inline-block">Automático según receta</span>}
                              </div>
                              
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                  {sessionRecipe.map((ing, idx) => (
-                                     <div key={ing.ingredientId + idx} className={`flex items-center justify-between p-3 rounded-xl transition-all border ${ing.ingredientId.startsWith('CUSTOM_') ? 'bg-amber-50/50 border-amber-200' : 'bg-muted/20 border-transparent hover:border-border'}`}>
+                                     <div key={ing.ingredientId + idx} className={`flex items-center justify-between p-3 lg:p-4 rounded-xl transition-all border ${ing.ingredientId.startsWith('CUSTOM_') ? 'bg-amber-50/50 border-amber-200' : 'bg-muted/20 border-transparent hover:border-border'}`}>
                                          <div className="flex items-center gap-3">
                                              {ing.ingredientId.startsWith('CUSTOM_') && (
                                                  <div className="text-amber-500 mt-1" title="Posible inconsistencia en inventario">
@@ -420,21 +451,20 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
                                                  </div>
                                              )}
                                              <div>
-                                                 <span className="text-foreground font-bold block text-sm">{ing.ingredientName}</span>
+                                                 <span className="text-foreground font-bold block text-sm lg:text-base">{ing.ingredientName}</span>
                                                  {ing.ingredientId.startsWith('CUSTOM_') && <span className="text-[9px] text-amber-700 font-bold uppercase tracking-wider bg-amber-100 px-1.5 py-0.5 rounded">Revisar Inventario</span>}
                                              </div>
                                          </div>
                                          <div className="flex items-center gap-2">
-                                             <input 
-                                                type="number"
+                                             <NumberInput 
                                                 value={ing.quantity || 0}
-                                                onChange={(e) => handleIngredientChange(idx, Number(e.target.value))}
-                                                style={{ width: `${Math.max(3, (ing.quantity || 0).toString().length) + 4}ch` }}
-                                                disabled={mode !== 'TRAINING'} // ONLY Editable in Training
-                                                className={`min-w-[80px] text-center px-2 py-1 rounded-lg border-2 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                                                onValueChange={(val) => handleIngredientChange(idx, val)}
+                                                readOnly={mode !== 'TRAINING'} // ONLY Editable in Training
+                                                style={{ width: `${Math.max(3, (ing.quantity || 0).toString().length) + 3}ch` }}
+                                                className={`min-w-[70px] text-center px-2 py-2 rounded-lg border-2 outline-none transition-all text-lg font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
                                                     mode === 'TRAINING' 
-                                                        ? 'bg-[#A0522D]/10 border-[#A0522D]/50 text-[#5D4037] font-bold focus:ring-[#A0522D] cursor-text' 
-                                                        : 'bg-transparent border-transparent text-muted-foreground font-medium cursor-default opacity-80'
+                                                        ? 'bg-[#A0522D]/10 border-[#A0522D]/50 text-[#5D4037] focus:ring-[#A0522D] cursor-text' 
+                                                        : 'bg-transparent border-transparent text-muted-foreground cursor-default opacity-80'
                                                 }`}
                                              />
                                              <span className="text-xs font-bold text-muted-foreground w-8 text-center uppercase">{ing.unit}</span>
@@ -445,7 +475,7 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
 
                              {mode === 'TRAINING' && (
                                  <div className="mt-6 p-4 bg-[#A0522D]/10 text-[#5D4037] text-sm rounded-xl border border-[#A0522D]/20 flex gap-4 items-start">
-                                     <div className="p-2 bg-white rounded-full shadow-sm text-[#A0522D]">
+                                     <div className="p-2 bg-white rounded-full shadow-sm text-[#A0522D] hidden sm:block">
                                          <FaDumbbell size={16} />
                                      </div>
                                      <div>
@@ -469,7 +499,7 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
                      <button
                         onClick={handleConfirm}
                         disabled={loading || inputQty <= 0}
-                        className={`w-full py-5 text-xl font-bold rounded-xl shadow-xl transition-all transform active:scale-[0.98] ${
+                        className={`w-full py-5 lg:py-6 text-xl lg:text-2xl font-bold rounded-xl shadow-xl transition-all transform active:scale-[0.98] ${
                             loading || inputQty <= 0 ? 'opacity-50 cursor-not-allowed bg-muted text-muted-foreground' :
                             mode === 'TRAINING'
                                 ? 'bg-[#A0522D] text-white hover:bg-[#8B4513] shadow-[#A0522D]/25'
@@ -485,7 +515,7 @@ export default function ProductionLogger({ products, onProductionCompleted }: Pr
              )}
 
              {!selectedProduct && (
-                 <div className="p-16 text-center text-muted-foreground">
+                 <div className="p-12 lg:p-24 text-center text-muted-foreground">
                      <FaClipboardList className="text-6xl mx-auto mb-4 opacity-10" />
                      <p className="text-lg">Selecciona una receta arriba para comenzar.</p>
                  </div>

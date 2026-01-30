@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { FaBolt, FaClipboardCheck, FaExclamationTriangle, FaLeaf, FaWeightHanging, FaBoxOpen } from "react-icons/fa";
+import { NumberInput } from "./ui/NumberInput";
 
 // Component Types (Can be moved if reused)
 export interface IngredientInput {
@@ -209,10 +210,9 @@ export default function ProductionEntryForm({
                                 )}
                             </div>
                             <div className="flex items-center gap-2">
-                                <input
-                                    type="number"
+                                <NumberInput
                                     value={realOutput}
-                                    onChange={(e) => setRealOutput(Number(e.target.value))}
+                                    onValueChange={setRealOutput}
                                     className="flex-1 p-3 text-right font-bold text-lg bg-background border-2 border-input rounded-lg focus:border-primary focus:outline-none"
                                 />
                                 <span className="font-bold text-muted-foreground w-10">{selectedContainer.unit}</span>
@@ -237,11 +237,10 @@ export default function ProductionEntryForm({
                                             <div className="flex justify-between items-center">
                                                 <span className="text-sm font-medium text-foreground">{ing.name}</span>
                                                 <div className="flex items-center gap-2">
-                                                    <input
-                                                        type="number"
+                                                    <NumberInput
                                                         value={curr}
-                                                        onChange={(e) => setIngredientAdjustments(prev => ({...prev, [ing.id]: Number(e.target.value)}))}
-                                                        className={`w-20 p-1 text-right border rounded text-sm ${isModified ? 'border-amber-400 bg-amber-50' : 'border-border bg-transparent'}`}
+                                                        onValueChange={(val) => setIngredientAdjustments(prev => ({...prev, [ing.id]: val}))}
+                                                        className={`w-20 p-1 text-right border rounded text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isModified ? 'border-amber-400 bg-amber-50' : 'border-border bg-transparent'}`}
                                                     />
                                                     <span className="text-xs text-muted-foreground w-6">{ing.unit}</span>
                                                 </div>

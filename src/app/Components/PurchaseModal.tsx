@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { ProductoProps } from "../types/productTypes";
+import { NumberInput } from "./ui/NumberInput";
+import { SmartInput } from "./ui/SmartInput";
 
 interface Props {
   isOpen: boolean;
@@ -80,13 +82,10 @@ const PurchaseModal: React.FC<Props> = ({
                         Cantidad Comprada
                     </label>
                     <div className="relative">
-                        <input
-                            type="number"
-                            min="0.1"
-                            step="any"
+                        <NumberInput
+                            value={Number(purchaseQty) || 0}
+                            onValueChange={(val) => setPurchaseQty(val.toString())}
                             autoFocus
-                            value={purchaseQty}
-                            onChange={(e) => setPurchaseQty(e.target.value)}
                             className="w-full text-xl font-bold p-3 bg-muted/30 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary transition-all text-foreground"
                             placeholder="0"
                         />
@@ -99,10 +98,9 @@ const PurchaseModal: React.FC<Props> = ({
                         Unidad
                     </label>
                     {showConfig ? (
-                        <input 
-                            type="text"
+                        <SmartInput 
                             value={purchaseUnit}
-                            onChange={(e) => setPurchaseUnit(e.target.value)}
+                            onValueChange={setPurchaseUnit}
                             className="w-full p-3 bg-muted/30 border border-input rounded-lg text-sm"
                             placeholder="Ej: Caja"
                         />
@@ -134,10 +132,9 @@ const PurchaseModal: React.FC<Props> = ({
                     
                     <div className="flex items-center gap-2 text-sm">
                         <span>1 <strong>{purchaseUnit || "Unidad"}</strong> = </span>
-                        <input
-                            type="number"
-                            value={conversionFactor}
-                            onChange={(e) => setConversionFactor(e.target.value)}
+                        <NumberInput
+                            value={Number(conversionFactor) || 0}
+                            onValueChange={(val) => setConversionFactor(val.toString())}
                             className="w-16 p-1 text-center font-bold bg-background border border-input rounded"
                         />
                         <span>Unidades de Stock</span>
@@ -148,11 +145,14 @@ const PurchaseModal: React.FC<Props> = ({
             {/* Summary */}
             <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg text-center">
                 <p className="text-sm text-primary">
-                    Se sumarán <strong className="text-lg">{totalToAdd}</strong> al inventario.
+                    Estás ingresando {purchaseQty || 0} {purchaseUnit || "Bultos"}.
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-base font-bold text-foreground mt-1">
+                    Se sumarán {totalToAdd} {product.unit || 'un'} al stock.
+                </p>
+                <div className="text-xs text-muted-foreground mt-2 border-t border-primary/10 pt-2">
                     Stock Actual: {product.stock} ➝ Nuevo Stock: {product.stock + totalToAdd}
-                </p>
+                </div>
             </div>
 
             <div className="flex gap-3 pt-2">
