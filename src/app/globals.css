@@ -48,8 +48,8 @@
   --font-serif: var(--font-playfair);
 
   /* Sidebar specific (Light) - MATCHING PRIMARY */
-  --sidebar-bg: #BF8055;
-  /* Slightly lighter than primary for sidebar, or same? User said "nav bar... to this". Let's use a variant. */
+  --sidebar-bg: #8B4513;
+  /* User requested to match the secondary button color */
   --sidebar-fg: #FFFFFF;
 }
 
@@ -90,7 +90,7 @@
   --ring: #DCC099;
 
   /* Sidebar specific (Dark) */
-  --sidebar-bg: #5D2E1F;
+  --sidebar-bg: #A0522D;
   --sidebar-fg: #E0D0C0;
 }
 

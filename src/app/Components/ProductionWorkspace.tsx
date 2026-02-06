@@ -24,6 +24,7 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
     price: 0,
     stock: 0,
     category: "Cocina",
+    usageCategory: 'ASSEMBLY', // Default output for Production is Assembly (Armado de platos)
   });
 
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
@@ -66,7 +67,9 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
         ingredientId: item.id,
         ingredientName: item.title,
         quantity: 1, // Default, user edits
-        unit: item.purchaseUnit || 'un' // Default unit
+        waste: 0,
+        wasteUnit: item.unit || 'un', // Default same as usage (Inventory Base Unit)
+        unit: item.unit || 'un' // Default unit (Inventory Base Unit)
     };
 
     setFormData(prev => ({
@@ -84,6 +87,8 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
           ingredientId: "CUSTOM_" + Date.now(), // Unique ID for custom item
           ingredientName: searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1), // Auto-capitalize
           quantity: 1,
+          waste: 0,
+          wasteUnit: 'un',
           unit: 'un'
       };
       setFormData(prev => ({
@@ -135,7 +140,7 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
   // Filtered ingredients for picker
   const filteredInventory = inventoryItems.filter(i => 
       i.title.toLowerCase().includes(searchTerm.toLowerCase()) &&
-      // Exclude already added
+      (i.usageCategory === 'PRODUCTION' || i.usageCategory === 'DUAL') && // Only allow Production or Dual inputs
       !formData.recipe?.some(r => r.ingredientId === i.id)
   );
 
@@ -229,41 +234,47 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
 
                          <div className="space-y-3">
                             {/* Primary Container */}
-                            <div className="grid grid-cols-12 gap-2 items-center">
+                            <div className="grid grid-cols-12 gap-2 items-center bg-muted/10 p-3 rounded-xl border border-border/50">
                                 <div className="col-span-12 md:col-span-5">
-                                    <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Principal (Lote)</label>
+                                    <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Unidad de Carga (Contenedor)</label>
                                     <SmartInput 
-                                        placeholder="Ej: Olla 20L" 
+                                        placeholder="Ej: Batea, Olla, Frasco" 
                                         value={formData.defaultContainer?.name || ""}
                                         onValueChange={val => setFormData({
                                             ...formData, 
+                                            // Map Container Name -> Purchase Unit
+                                            purchaseUnit: val,
                                             defaultContainer: {...formData.defaultContainer!, name: val}
                                         })}
                                         className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20"
                                     />
                                 </div>
                                 <div className="col-span-6 md:col-span-3">
-                                    <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Capacidad</label>
+                                    <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Equivalencia</label>
                                     <NumberInput 
                                         placeholder="0"
                                         value={formData.defaultContainer?.capacity || 0}
                                         onValueChange={val => setFormData({
                                             ...formData, 
+                                            // Map Capacity -> Conversion Factor
+                                            conversionFactor: val,
                                             defaultContainer: {...formData.defaultContainer!, capacity: val}
                                         })}
-                                        className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20 text-center"
+                                        className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20 text-center font-bold"
                                     />
                                 </div>
                                 <div className="col-span-6 md:col-span-4">
-                                    <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Unidad</label>
+                                    <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Unidad de Uso</label>
                                     <SmartInput 
-                                        placeholder="Lts"
+                                        placeholder="Lts, Kg, Un"
                                         value={formData.defaultContainer?.unit || ""}
                                         onValueChange={val => setFormData({
                                             ...formData, 
+                                            // Map Container Unit -> Base Unit
+                                            unit: val,
                                             defaultContainer: {...formData.defaultContainer!, unit: val}
                                         })}
-                                        className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20 text-center"
+                                        className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background/50 focus:bg-background outline-none focus:ring-2 focus:ring-primary/20 text-center font-bold"
                                     />
                                 </div>
                             </div>
@@ -385,8 +396,9 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
                                     )}
                                 </div>
 
-                                {/* Quantity */}
-                                <div className="flex items-center gap-2">
+                                {/* Quantity and Waste */}
+                                <div className="flex flex-col items-center gap-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase">Cant.</span>
                                     <NumberInput 
                                         value={ing.quantity || 0}
                                         onValueChange={(val) => handleUpdateIngredient(idx, 'quantity', val)}
@@ -395,14 +407,34 @@ export default function ProductionWorkspace({ initialData, onClose, onSaved }: P
                                         className="min-w-[80px] bg-muted/20 border-2 border-foreground/50 hover:border-foreground focus:border-primary focus:bg-background rounded-lg px-2 py-1.5 text-center font-mono font-bold outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                 </div>
+                                <div className="flex flex-col items-center gap-1">
+                                    <span className="text-[10px] font-bold text-destructive/50 uppercase">Merma</span>
+                                     <div className="flex items-center gap-1">
+                                        <NumberInput 
+                                            value={ing.waste || 0}
+                                            onValueChange={(val) => handleUpdateIngredient(idx, 'waste', val)}
+                                            placeholder="0"
+                                            style={{ width: `${Math.max(3, (ing.waste || 0).toString().length) + 4}ch` }}
+                                            className="min-w-[60px] bg-destructive/5 border-2 border-destructive/20 hover:border-destructive/50 focus:border-destructive focus:bg-background rounded-lg px-2 py-1.5 text-center font-mono font-bold outline-none transition-all text-destructive [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        />
+                                        <SmartInput 
+                                            value={ing.wasteUnit || ing.unit}
+                                            onValueChange={(val) => handleUpdateIngredient(idx, 'wasteUnit', val)}
+                                            className="w-12 bg-destructive/5 border border-transparent hover:border-destructive/30 focus:border-destructive/50 focus:bg-background rounded-lg px-1 py-1.5 text-center text-[10px] font-bold text-destructive/70 outline-none transition-all"
+                                            placeholder={ing.unit}
+                                        />
+                                     </div>
+                                </div>
 
                                 {/* Unit (Editable) */}
                                 <div className="w-24">
                                      <SmartInput 
                                         value={ing.unit}
                                         onValueChange={(val) => handleUpdateIngredient(idx, 'unit', val)}
-                                        className="w-full bg-muted/20 border border-transparent hover:border-border focus:border-primary/50 focus:bg-background rounded-lg px-3 py-1.5 text-center text-sm font-medium outline-none transition-all"
+                                        className={`w-full bg-muted/20 border border-transparent hover:border-border focus:border-primary/50 focus:bg-background rounded-lg px-3 py-1.5 text-center text-sm font-medium outline-none transition-all ${!ing.ingredientId.startsWith('CUSTOM_') ? 'opacity-75 cursor-not-allowed' : ''}`}
                                         placeholder="Unidad"
+                                        disabled={!ing.ingredientId.startsWith('CUSTOM_')}
+                                        title={!ing.ingredientId.startsWith('CUSTOM_') ? "Unidad definida por Inventario (No editable)" : "Unidad manual"}
                                     />
                                 </div>
 

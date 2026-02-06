@@ -8,18 +8,24 @@ import ProductionWorkspace from "../../Components/ProductionWorkspace";
 import { FaHistory, FaArrowLeft, FaBoxOpen, FaCog } from "react-icons/fa";
 import Link from "next/link";
 import { ProductoData } from "../../types/productTypes";
+import ProductionHistoryModal from "../../Components/ProductionHistoryModal"; // Import History Modal
 
 // Use the central type or extend it locally
 interface KitchenProduct extends ProductoData {}
 
 export default function KitchenProductionPage() {
   const [products, setProducts] = useState<KitchenProduct[]>([]);
+  const [allProducts, setAllProducts] = useState<KitchenProduct[]>([]); // New state
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // View State: 'LOGGER' (Daily Use) or 'MANAGER' (Create/Edit Recipes)
   const [viewMode, setViewMode] = useState<'LOGGER' | 'MANAGER'>('LOGGER');
   const [productToEdit, setProductToEdit] = useState<KitchenProduct | null>(null);
+  
+  // History Modal State
+  const [productForHistory, setProductForHistory] = useState<KitchenProduct | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   // Load Products
   const loadProducts = async () => {
@@ -37,14 +43,15 @@ export default function KitchenProductionPage() {
       
       // Filter for Production Items Only
       const productionItems = data.filter(p => 
-          p.productionStrategy === 'VOLUME_BATCH' || 
-          p.productionStrategy === 'UNIT_ASSEMBLY'
+          (p.productionStrategy === 'VOLUME_BATCH' || p.productionStrategy === 'UNIT_ASSEMBLY') &&
+          p.usageCategory !== 'MENU' // Exclude Menu items if they accidentally have this strategy
       );
 
       // Client-side sort
       productionItems.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
 
       setProducts(productionItems);
+      setAllProducts(data); // Store full list for stock lookups
     } catch (error: any) {
       console.error("Error loading kitchen products:", error);
       setError(error.message || "Error desconocido al cargar productos");
@@ -112,7 +119,8 @@ export default function KitchenProductionPage() {
             {/* LOGGER MODE (Default) */}
             {viewMode === 'LOGGER' && (
                 <ProductionLogger 
-                    products={products} 
+                    products={products} // Only Recipes
+                    inventory={allProducts} // All Items (for stock lookup)
                     onProductionCompleted={loadProducts}
                 />
             )}
@@ -140,10 +148,18 @@ export default function KitchenProductionPage() {
                                                  {p.productionStrategy === 'VOLUME_BATCH' ? 'Por Lote' : 'Por Unidad'}
                                              </p>
                                              {(p.timesProduced !== undefined && p.timesProduced > 0) && (
-                                                <p className="text-xs font-bold text-[#A0522D] mt-1 flex items-center gap-1">
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setProductForHistory(p);
+                                                        setShowHistoryModal(true);
+                                                    }}
+                                                    className="text-xs font-bold text-[#A0522D] mt-1 flex items-center gap-1 hover:underline hover:scale-105 transition-all cursor-pointer bg-[#A0522D]/5 px-2 py-1 rounded-md"
+                                                    title="Ver Historial y Receta Madre"
+                                                >
                                                     <FaHistory size={10} />
-                                                    {p.timesProduced} Entrenamientos
-                                                </p>
+                                                    {p.timesProduced} Entrenamientos (Ver Historial)
+                                                </button>
                                              )}
                                          </div>
                                          <button 
@@ -170,6 +186,14 @@ export default function KitchenProductionPage() {
             )}
           </>
       )}
+      
+      {/* History Modal */}
+      <ProductionHistoryModal 
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        product={productForHistory}
+        filterMode="TRAINING"
+      />
       
     </div>
   );

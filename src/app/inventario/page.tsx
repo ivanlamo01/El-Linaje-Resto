@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { collection, query, getDocs, orderBy, doc, updateDoc, increment, deleteDoc } from "firebase/firestore";
+import { collection, query, getDocs, orderBy, doc, updateDoc, increment, deleteDoc, addDoc } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { FaBoxOpen, FaHammer, FaSearch, FaPlus, FaEdit, FaCartPlus, FaHistory } from "react-icons/fa";
 import ProductionModal from "../Components/ProductionModal";
@@ -115,6 +115,22 @@ export default function InventoryPage() {
             }
       }
       
+      // 3. Log History (Consistent with Kitchen Logger)
+      // Map 'DETAILED' to 'TRAINING' if needed, or just keep as is. Kitchen uses FAST/TRAINING.
+      const historyMode = data.mode === 'DETAILED' ? 'TRAINING' : 'FAST';
+      
+      const historyRef = collection(doc(db, "Productos", selectedProductForProduction.id), "History");
+      await addDoc(historyRef, {
+        date: new Date().toISOString(),
+        mode: historyMode,
+        batches: quantityProduced, // Or 1 if unit based, but producedQuantity is total units usually
+        totalYield: quantityProduced,
+        inputs: selectedProductForProduction.recipe || [], // Snapshot of recipe used (simplified)
+        changes: [], // Inventory production currently doesn't trigger auto-calibration of master recipe
+        notes: "Producción desde Inventario",
+        user: "Admin"
+      });
+
       // Reload to ensure sync
       await loadProducts();
     } catch (error) {
@@ -157,7 +173,7 @@ export default function InventoryPage() {
       }
   };
 
-  const [currentTab, setCurrentTab] = useState<'PROVIDERS' | 'PRODUCTION'>('PROVIDERS');
+  const [currentTab, setCurrentTab] = useState<'INSUMOS' | 'ARMADO' | 'MENU'>('INSUMOS');
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
@@ -167,14 +183,50 @@ export default function InventoryPage() {
                           (p.supplier && p.supplier.toLowerCase().includes(searchTerm.toLowerCase()));
     
     // 2. Tab Filter
-    const isProductionItem = p.productionStrategy === 'VOLUME_BATCH' || p.productionStrategy === 'UNIT_ASSEMBLY';
-    const matchesTab = currentTab === 'PRODUCTION' ? isProductionItem : !isProductionItem;
+    // 2. Tab Filter
+    let matchesTab = false;
+    const cat = p.usageCategory || 'PRODUCTION'; // Default to PRODUCTION if undefined
+
+    if (currentTab === 'INSUMOS') {
+        matchesTab = cat === 'PRODUCTION' || cat === 'DUAL';
+    } else if (currentTab === 'ARMADO') {
+        matchesTab = cat === 'ASSEMBLY' || cat === 'DUAL';
+    } else if (currentTab === 'MENU') {
+        matchesTab = cat === 'MENU';
+    }
 
     // 3. Category Filter
     const matchesCategory = selectedCategory ? p.category === selectedCategory : true;
 
     return matchesSearch && matchesTab && matchesCategory;
   });
+
+  // Auto-Switch Tab Logic
+  useEffect(() => {
+      if (!selectedCategory) return;
+
+      const categoryItems = products.filter(p => p.category === selectedCategory);
+      const counts = {
+         INSUMOS: categoryItems.filter(p => !p.usageCategory || p.usageCategory === 'PRODUCTION' || p.usageCategory === 'DUAL').length,
+         ARMADO: categoryItems.filter(p => p.usageCategory === 'ASSEMBLY' || p.usageCategory === 'DUAL').length,
+         MENU: categoryItems.filter(p => p.usageCategory === 'MENU').length
+      };
+
+      // If current tab has 0 items but another tab has items, switch!
+      // Or be more aggressive: Always switch to the highest count tab
+      const currentCount = counts[currentTab];
+      
+      if (currentCount === 0) {
+          if (counts.INSUMOS > 0) setCurrentTab('INSUMOS');
+          else if (counts.ARMADO > 0) setCurrentTab('ARMADO');
+          else if (counts.MENU > 0) setCurrentTab('MENU');
+      } else {
+          // Optional: If you want to force switch to highest even if current has some
+          // const max = Math.max(counts.INSUMOS, counts.ARMADO, counts.MENU);
+          // if (max > currentCount) ... 
+          // For now, "Don't leave me where there are none" is the safer, less jarring UX.
+      }
+  }, [selectedCategory, products]); // Dependency on products in case they load later
 
   // Bulk Selection Logic
   const toggleSelectItem = (id: string) => {
@@ -242,7 +294,7 @@ export default function InventoryPage() {
                     <input 
                         type="text" 
                         placeholder="Buscar..." 
-                        className="w-full pl-10 pr-4 py-2 rounded-xl bg-card border border-border focus:ring-2 focus:ring-primary focus:outline-none"
+                className="w-full pl-10 pr-4 py-2 rounded-xl bg-card border border-border focus:ring-2 focus:ring-primary focus:outline-none"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
@@ -250,29 +302,69 @@ export default function InventoryPage() {
             </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-4 border-b border-border mb-6">
-            <button
-                onClick={() => setCurrentTab('PROVIDERS')}
-                className={`pb-3 px-4 text-lg font-bold transition-all border-b-2 ${
-                    currentTab === 'PROVIDERS' 
-                        ? 'text-primary border-primary' 
-                        : 'text-muted-foreground border-transparent hover:text-foreground'
-                }`}
-            >
-                🥫 Insumos / Proveedores
-            </button>
-            <button
-                onClick={() => setCurrentTab('PRODUCTION')}
-                className={`pb-3 px-4 text-lg font-bold transition-all border-b-2 ${
-                    currentTab === 'PRODUCTION' 
-                        ? 'text-primary border-primary' 
-                        : 'text-muted-foreground border-transparent hover:text-foreground'
-                }`}
-            >
-                🥘 Stock Intermedio / Producción
-            </button>
-        </div>
+        {/* Smart Navigation Calculation */}
+        {(() => {
+             // Calculate stats for badges & auto-switch logic
+             const getCategoryStats = (cat: string) => {
+                 if (!cat) return { INSUMOS: 0, ARMADO: 0, MENU: 0 };
+                 
+                 const categoryItems = products.filter(p => p.category === cat);
+                 return {
+                     INSUMOS: categoryItems.filter(p => !p.usageCategory || p.usageCategory === 'PRODUCTION' || p.usageCategory === 'DUAL').length,
+                     ARMADO: categoryItems.filter(p => p.usageCategory === 'ASSEMBLY' || p.usageCategory === 'DUAL').length,
+                     MENU: categoryItems.filter(p => p.usageCategory === 'MENU').length
+                 };
+             };
+             
+             // Memoize this if perf issues, but for <1000 items it's fine inline or in render.
+             // We need these stats available for the badges below.
+             const stats = getCategoryStats(selectedCategory);
+             
+             // Auto-Switch Effect is handled via useEffect below since we can't do side effects in render.
+             return (
+               <div className="flex gap-4 border-b border-border mb-6 overflow-x-auto pb-1">
+                <button
+                    onClick={() => setCurrentTab('INSUMOS')}
+                    className={`pb-3 px-4 text-lg font-bold transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${
+                        currentTab === 'INSUMOS' 
+                            ? 'text-primary border-primary' 
+                            : 'text-muted-foreground border-transparent hover:text-foreground'
+                    }`}
+                >
+                    🥦 Insumos
+                    {selectedCategory && stats.INSUMOS > 0 && (
+                        <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">{stats.INSUMOS}</span>
+                    )}
+                </button>
+                <button
+                    onClick={() => setCurrentTab('ARMADO')}
+                    className={`pb-3 px-4 text-lg font-bold transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${
+                        currentTab === 'ARMADO' 
+                            ? 'text-primary border-primary' 
+                            : 'text-muted-foreground border-transparent hover:text-foreground'
+                    }`}
+                >
+                    🍔 Armado
+                     {selectedCategory && stats.ARMADO > 0 && (
+                        <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">{stats.ARMADO}</span>
+                    )}
+                </button>
+                <button
+                    onClick={() => setCurrentTab('MENU')}
+                    className={`pb-3 px-4 text-lg font-bold transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${
+                        currentTab === 'MENU' 
+                            ? 'text-primary border-primary' 
+                            : 'text-muted-foreground border-transparent hover:text-foreground'
+                    }`}
+                >
+                    📜 Menú
+                     {selectedCategory && stats.MENU > 0 && (
+                        <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">{stats.MENU}</span>
+                    )}
+                </button>
+            </div>
+             );
+        })()}
 
         {/* Table Card */}
         <div className="bg-card rounded-2xl shadow-xl border border-border overflow-hidden">
@@ -289,9 +381,10 @@ export default function InventoryPage() {
                                 />
                             </th>
                             <th className="p-4 font-serif font-bold text-primary text-base">Item</th>
-                            <th className="p-4 font-serif font-bold text-primary text-base">Proveedor</th>
-                            <th className="p-4 font-serif font-bold text-primary text-base text-center">Stock (U. Compra)</th>
-                            <th className="p-4 font-serif font-bold text-primary text-base text-center">Stock (U. Uso)</th>
+                            <th className="p-4 font-serif font-bold text-primary text-base text-center">
+                                {currentTab === 'MENU' ? 'Precio Venta' : 'Costo & Compra'}
+                            </th>
+                            <th className="p-4 font-serif font-bold text-primary text-base text-center">Stock (Unidad Uso)</th>
                             <th className="p-4 font-serif font-bold text-primary text-base text-center">Acciones</th>
                         </tr>
                     </thead>
@@ -301,7 +394,12 @@ export default function InventoryPage() {
                                 <td colSpan={7} className="p-8 text-center text-muted-foreground">Cargando datos...</td>
                             </tr>
                         ) : filteredProducts.length > 0 ? (
-                            filteredProducts.map(product => (
+                            filteredProducts.map(product => {
+                                // Cost Logic: Use 'cost' if exists, else 'price' (migration fallback)
+                                const displayCost = product.cost !== undefined ? product.cost : product.price;
+                                const displayPrice = product.price;
+
+                                return (
                                 <tr key={product.id} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${selectedItems.has(product.id) ? 'bg-primary/5' : ''}`}>
                                     <td className="p-4 text-center">
                                         <input 
@@ -313,63 +411,71 @@ export default function InventoryPage() {
                                     </td>
                                     <td className="p-4 font-medium text-foreground">
                                         <div className="text-base">{product.title}</div>
-                                        <div className="text-[10px] text-muted-foreground bg-muted/30 px-1.5 py-0.5 rounded inline-block mt-1">
-                                            {product.category || "Sin Categoría"}
+                                        <div className="flex gap-2 mt-1">
+                                            <div className="text-[10px] text-muted-foreground bg-muted/30 px-1.5 py-0.5 rounded inline-block">
+                                                {product.category || "Sin Categoría"}
+                                            </div>
+                                            {/* Usage Category Badge */}
+                                            {product.usageCategory === 'DUAL' && (
+                                                <span className="text-[10px] bg-purple-500/10 text-purple-500 font-bold px-1.5 py-0.5 rounded">DUAL</span>
+                                            )}
                                         </div>
                                     </td>
-                                    <td className="p-4 text-muted-foreground">
-                                        {product.supplier || <span className="text-muted-foreground/30 italic">--</span>}
-                                    </td>
-                                    {/* Stock (Purchase Unit) */}
+                                    
+                                    {/* Cost / Price Column */}
                                     <td className="p-4 text-center">
-                                        {product.purchaseUnit ? (
-                                             <div className="flex flex-col items-center">
-                                                 <span className="font-bold text-lg">
-                                                     {product.conversionFactor && product.conversionFactor > 1 
-                                                        ? Number((product.stock / product.conversionFactor).toFixed(2)).toString() 
-                                                        : "--"
-                                                     }
-                                                 </span>
-                                                 <span className="text-xs text-muted-foreground">{product.purchaseUnit}</span>
+                                        {currentTab !== 'MENU' ? (
+                                             <div className="flex flex-col items-center gap-1">
+                                                 <div className="font-bold text-foreground">
+                                                     ${(displayCost || 0).toLocaleString()}
+                                                     <span className="text-[10px] text-muted-foreground font-normal ml-1">
+                                                         / {product.purchaseUnit || 'u'}
+                                                     </span>
+                                                 </div>
+
+                                                 {product.purchaseUnit && (
+                                                     <div className="text-[10px] text-muted-foreground">
+                                                         Unit: {product.purchaseUnit}
+                                                     </div>
+                                                 )}
+
                                                  {product.conversionFactor && product.conversionFactor > 1 && (
-                                                     <span className="text-[10px] text-muted-foreground/60">c/u x {product.conversionFactor} {product.unit || 'un'}</span>
+                                                     <div className="text-[10px] bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-md font-bold mt-1">
+                                                         1 {product.purchaseUnit ? product.purchaseUnit.slice(0,3) : 'Uni'} = {product.conversionFactor} {product.unit}
+                                                     </div>
                                                  )}
                                              </div>
-                                        ) : <span className="text-muted-foreground/30 italic">--</span>}
+                                        ) : (
+                                            <div className="flex flex-col items-center">
+                                                <span className="font-bold text-lg text-emerald-600">
+                                                    ${(displayPrice || 0).toLocaleString()}
+                                                </span>
+                                                {product.variablePrice && (
+                                                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Variable</span>
+                                                )}
+                                            </div>
+                                        )}
                                     </td>
                                     
                                     {/* Stock (Usage Unit) */}
                                     <td className="p-4 text-center font-medium">
                                         <div className="flex flex-col items-center">
                                             <span className={`font-bold text-lg ${product.stock <= 5 ? "text-destructive" : "text-foreground"}`}>
-                                                {Number(product.stock.toFixed(3)).toString()}
+                                                {Number(product.stock.toFixed(3))}
                                             </span>
                                             <span className="text-xs text-muted-foreground">{product.unit || "un"}</span>
+                                            
+                                            {/* Show Stock in Purchase Unit Estimate */}
+                                            {product.conversionFactor && product.conversionFactor > 1 && (
+                                                 <span className="text-[10px] text-muted-foreground/60 mt-0.5">
+                                                     ({(product.stock / product.conversionFactor).toFixed(1)} {product.purchaseUnit})
+                                                 </span>
+                                            )}
                                         </div>
                                     </td>
 
-                                    <td className="p-4 text-center flex items-center justify-center gap-2">
-                                         {/* Purchase Button (Only for Providers) */}
-                                         {currentTab === 'PROVIDERS' && (
-                                            <button 
-                                                onClick={() => openPurchaseModal(product)}
-                                                className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white font-medium text-xs transition-colors flex items-center gap-1 group"
-                                                title="Ingresar Compra"
-                                            >
-                                                <FaCartPlus size={12} className="group-hover:scale-110 transition-transform"/> Ingreso
-                                            </button>
-                                         )}
-
-                                         {/* Edit / History Button */}
-                                         {currentTab === 'PRODUCTION' ? (
-                                            <button 
-                                                onClick={() => openHistoryModal(product)}
-                                                className="px-3 py-1.5 rounded-lg bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500 hover:text-white font-medium text-xs transition-colors flex items-center gap-1 border border-yellow-500/20"
-                                                title="Ver Historial de Producción"
-                                            >
-                                                <FaHistory size={12} />
-                                            </button>
-                                         ) : (
+                                     <td className="p-4 text-center flex items-center justify-center gap-2">
+                                         {/* Edit Button */}
                                             <button 
                                                 onClick={() => openEditModal(product)}
                                                 className="px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary hover:bg-secondary hover:text-secondary-foreground font-medium text-xs transition-colors flex items-center gap-1"
@@ -377,10 +483,32 @@ export default function InventoryPage() {
                                             >
                                                 <FaEdit size={12} />
                                             </button>
+
+                                         {/* Purchase Button (Only for Insumos/Armado) */}
+                                         {currentTab !== 'MENU' && (
+                                            <button 
+                                                onClick={() => openPurchaseModal(product)}
+                                                className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white font-medium text-xs transition-colors flex items-center gap-1 group"
+                                                title="Ingresar Compra"
+                                            >
+                                                <FaCartPlus size={12} className="group-hover:scale-110 transition-transform"/>
+                                            </button>
                                          )}
+
+                                         {/* History Button (Only for items that are PRODUCED internally) */}
+                                         {(product.usageCategory === 'PRODUCTION' || product.productionStrategy !== 'BASIC') && (
+                                            <button 
+                                                onClick={() => openHistoryModal(product)}
+                                                className="px-3 py-1.5 rounded-lg bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500 hover:text-white font-medium text-xs transition-colors flex items-center gap-1 border border-yellow-500/20"
+                                                title="Ver Historial de Producción"
+                                            >
+                                                <FaHistory size={12} />
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
-                            ))
+                                );
+                            })
                         ) : (
                             <tr>
                                 <td colSpan={7} className="p-8 text-center text-muted-foreground">
@@ -416,6 +544,7 @@ export default function InventoryPage() {
             onClose={() => setIsProductModalOpen(false)}
             onSaved={loadProducts}
             onDelete={handleDeleteProduct}
+            availableIngredients={products}
         />
       )}
 
@@ -424,6 +553,7 @@ export default function InventoryPage() {
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
         product={selectedProductForHistory}
+        filterMode="ALL"
       />
     </div>
   );

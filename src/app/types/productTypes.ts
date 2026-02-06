@@ -8,16 +8,25 @@ export interface RecetaItem {
     ingredientId: string;
     ingredientName: string; // Cached name for UI display
     quantity: number; // amount per standard unit/capacity
+    waste?: number; // merma estimad/real
+    wasteUnit?: string; // Unidad de la merma (puede ser distinta a la de uso)
     unit: string;
 }
 
+
+export type UsageCategory = 'PRODUCTION' | 'ASSEMBLY' | 'DUAL' | 'MENU';
+
 export interface ProductoData {
+
   id: string;
   title: string;
   price: number;
+  cost?: number; // Costo de adquisición
   Barcode: string;
   category: string;
   stock: number;
+  usageCategory?: UsageCategory;
+
   variablePrice?: boolean;
   description?: string;
   products?: PromoProduct[];
@@ -49,6 +58,7 @@ export interface ProductoData {
   
   // Usage Stats for Training Mode
   timesProduced?: number;
+  calibrationCount?: number; // Number of times calibrated/trained
 
   // Calibration Data (Learned Truth)
   calibration?: {

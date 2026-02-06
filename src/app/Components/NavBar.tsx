@@ -64,7 +64,7 @@ const NavBar: React.FC = () => {
         `}
       >
         {/* LOGO AREA (Desktop) */}
-        <div id="sidebar-logo" className={`flex items-center justify-center py-6 border-b border-border transition-all duration-300 ${isCollapsed ? "px-2" : "px-6"}`}>
+        <div id="sidebar-logo" className={`bg-[#708090] flex items-center justify-center py-6 border-b border-border transition-all duration-300 ${isCollapsed ? "px-2" : "px-6"}`}>
           {!isCollapsed ? (
             <div className="relative w-48 h-20 transition-all duration-300">
                {/* Expanded: Larger Logo */}
@@ -91,20 +91,20 @@ const NavBar: React.FC = () => {
               onClick={() => setUserDropdownOpen(!userDropdownOpen)}
               className={`flex items-center p-4 border-b border-border transition-all duration-300 cursor-pointer hover:bg-muted/50 ${isCollapsed ? "justify-center" : "gap-3"}`}
             >
-              <div className="bg-secondary p-2.5 rounded-full text-foreground/80">
+              <div className="bg-sidebar-foreground/10 p-2.5 rounded-full text-sidebar-foreground">
                 <FaUserCircle size={20} />
               </div>
               {!isCollapsed && (
                 <>
                   <div className="overflow-hidden flex-1">
-                    <p className="text-sm font-semibold text-foreground truncate w-24">
+                    <p className="text-sm font-semibold text-sidebar-foreground truncate w-24">
                       {user?.nombre || "Usuario"}
                     </p>
-                    <p className="text-xs text-muted-foreground truncate w-24">
+                    <p className="text-xs text-sidebar-foreground/70 truncate w-24">
                       {user?.email}
                     </p>
                   </div>
-                  <FaCaretDown className={`text-muted-foreground transition-transform duration-200 ${userDropdownOpen ? "rotate-180" : ""}`} size={12}/>
+                  <FaCaretDown className={`text-sidebar-foreground/70 transition-transform duration-200 ${userDropdownOpen ? "rotate-180" : ""}`} size={12}/>
                 </>
               )}
             </div>
@@ -136,7 +136,7 @@ const NavBar: React.FC = () => {
           <div className={`p-4 border-b border-border flex ${isCollapsed ? "justify-center" : ""}`}>
              <Link 
                href="/login"
-               className={`flex items-center gap-3 w-full p-2 rounded-xl bg-secondary/10 hover:bg-secondary/20 text-secondary transition-colors ${isCollapsed ? "justify-center" : ""}`}
+               className={`flex items-center gap-3 w-full p-2 rounded-xl bg-sidebar-foreground/10 hover:bg-sidebar-foreground/20 text-sidebar-foreground transition-colors ${isCollapsed ? "justify-center" : ""}`}
                title="Iniciar Sesión"
              >
                 <FaUserCircle size={24} />
@@ -156,11 +156,11 @@ const NavBar: React.FC = () => {
         </nav>
 
         {/* FOOTER ACTIONS */}
-        <div className="p-4 border-t border-border flex flex-col gap-2 bg-card">
+        <div className="p-4 border-t border-border flex flex-col gap-2">
           {/* Toggle Button (Desktop Only) */}
           <button
             onClick={toggleSidebar}
-            className="hidden lg:flex items-center justify-center w-full p-2 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground transition-colors"
+            className="hidden lg:flex items-center justify-center w-full p-2 rounded-xl bg-background/10 hover:bg-background/20 text-sidebar-foreground transition-colors"
             title={isCollapsed ? "Expandir" : "Contraer"}
           >
             {isCollapsed ? <FaChevronRight /> : <FaChevronLeft />}
@@ -189,13 +189,13 @@ const NavItem = ({ href, icon, label, collapsed, onClick, id }: { href: string; 
       id={id}
       onClick={onClick}
       className={`
-                group flex items-center gap-3 px-3 py-2.5 rounded-xl text-muted-foreground 
-                hover:bg-accent hover:text-accent-foreground transition-all duration-200
+                group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/80 
+                hover:bg-sidebar-foreground/10 hover:text-white transition-all duration-200
                 ${collapsed ? "justify-center" : ""}
             `}
       title={collapsed ? label : ""}
     >
-      <div className="group-hover:text-primary transition-colors">
+      <div className="group-hover:text-white transition-colors">
         {icon}
       </div>
       {!collapsed && (
